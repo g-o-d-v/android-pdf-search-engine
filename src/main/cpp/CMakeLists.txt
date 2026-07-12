@@ -1,48 +1,70 @@
-# 1. 提升最低版本要求，与你 app/build.gradle 中指定的版本匹配
 cmake_minimum_required(VERSION 3.22.1)
 
-# 2. 声明项目名称 (非必须，但有助于规范)
-project(MyPicNative)
+project(PdfSearchEngineNative LANGUAGES C CXX)
 
-# 3. 寻找当前目录下所有的 .cpp 源码文件
-aux_source_directory(. SOURCES)
+set(CMAKE_CXX_STANDARD 11)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
 
-# 4. 优化编译参数 (保持官方的高效 C++ 编译选项)
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11 -ffast-math -Ofast -Os -fvisibility=hidden -fvisibility-inlines-hidden -fdata-sections -ffunction-sections")
-set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -Wl,--gc-sections -Wl,-z,nocopyreloc")
+set(PDF_SEARCH_NATIVE_SOURCES
+        native.cpp
+        ocr_clipper.cpp
+        ocr_cls_process.cpp
+        ocr_crnn_process.cpp
+        ocr_db_post_process.cpp
+        ocr_ppredictor.cpp
+        pdfium_text_search.cpp
+        ppredictor.cpp
+        predictor_input.cpp
+        predictor_output.cpp
+        preprocess.cpp
+)
 
-# ==========================================================
-# 5. 【重要】配置头文件包含路径 (Include Directories)
-# 你需要手动在 app/src/main/cpp 下创建一个 include 文件夹，
-# 并把 PaddleLite 和 OpenCV 的头文件放进去。
-# ==========================================================
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include/PaddleLite)
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include/OpenCV)
 
-
-# ==========================================================
-# 6. 【重要】导入你已经放在 jniLibs 里的预编译库
-# 我们不再用 find_package 这种不可靠的方式，而是直接精准定位
-# ==========================================================
-# 导入 Paddle Lite 动态库
 add_library(paddle_light_api_shared SHARED IMPORTED)
-set_target_properties(paddle_light_api_shared PROPERTIES IMPORTED_LOCATION
-        ${CMAKE_CURRENT_SOURCE_DIR}/../jniLibs/${ANDROID_ABI}/libpaddle_light_api_shared.so)
+set_target_properties(
+        paddle_light_api_shared
+        PROPERTIES IMPORTED_LOCATION
+        "${CMAKE_CURRENT_SOURCE_DIR}/../jniLibs/${ANDROID_ABI}/libpaddle_light_api_shared.so"
+)
 
-# 导入 OpenCV 动态库 (你需要把对应的 OpenCV .so 放到 jniLibs 下)
 add_library(opencv_java4 SHARED IMPORTED)
-set_target_properties(opencv_java4 PROPERTIES IMPORTED_LOCATION
-        ${CMAKE_CURRENT_SOURCE_DIR}/../jniLibs/${ANDROID_ABI}/libopencv_java4.so)
+set_target_properties(
+        opencv_java4
+        PROPERTIES IMPORTED_LOCATION
+        "${CMAKE_CURRENT_SOURCE_DIR}/../jniLibs/${ANDROID_ABI}/libopencv_java4.so"
+)
 
+add_library(Native SHARED ${PDF_SEARCH_NATIVE_SOURCES})
 
-# 7. 生成你自己的本地库 libNative.so
-add_library(Native SHARED ${SOURCES})
+# Keep compile settings target-local so they do not leak into imported SDKs.
+target_compile_options(
+        Native
+        PRIVATE
+        -fvisibility=hidden
+        -fvisibility-inlines-hidden
+        -ffunction-sections
+        -fdata-sections
+        $<$<CONFIG:Release>:-O3>
+)
 
-# 8. 查找 Android 系统的日志库
+# NDK r28 aligns shared libraries for 16 KiB pages by default. This project is
+# still pinned to r21 for binary compatibility with the bundled OCR SDKs, so
+# explicitly request compatible ELF LOAD segment alignment for libNative.so.
+target_link_options(
+        Native
+        PRIVATE
+        -Wl,--gc-sections
+        -Wl,-z,max-page-size=16384
+        -Wl,-z,common-page-size=16384
+)
+
 find_library(log-lib log)
 
-# 9. 链接所有的库到你的 Native 库中
-target_link_libraries(Native
+target_link_libraries(
+        Native
         paddle_light_api_shared
         opencv_java4
         GLESv2

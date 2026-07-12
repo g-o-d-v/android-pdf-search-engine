@@ -1,15 +1,82 @@
+# Gradle / Android build output
+.gradle/
+**/build/
+.cxx/
+**/.cxx/
+.externalNativeBuild/
+**/.externalNativeBuild/
+captures/
+
+# Android Studio / IntelliJ
+.idea/
 *.iml
-.gradle
-/local.properties
-/.idea/caches
-/.idea/libraries
-/.idea/modules.xml
-/.idea/workspace.xml
-/.idea/navEditor.xml
-/.idea/assetWizardSettings.xml
-.DS_Store
-/build
-/captures
-.externalNativeBuild
-/.cxx
+*.ipr
+*.iws
+out/
+
+# Local Android SDK configuration
 local.properties
+
+# Generated official OCR models
+src/main/assets/cls.nb
+src/main/assets/det.nb
+src/main/assets/rec.nb
+**/generated/officialOcrModels/
+
+# Native build intermediates
+obj/
+libs/
+*.o
+*.obj
+*.a
+*.so.dbg
+
+# Signing, credentials and local secrets
+*.jks
+*.keystore
+*.p12
+*.pfx
+*.pem
+*.key
+*.asc
+.env
+.env.*
+secrets.properties
+signing.properties
+
+# Test / profiling output
+*.hprof
+*.trace
+*.prof
+reports/
+
+# OS files
+.DS_Store
+.AppleDouble
+.LSOverride
+Thumbs.db
+desktop.ini
+
+# Editors
+.vscode/
+*.swp
+*.swo
+*~
+
+# Archives and temporary files
+*.zip
+*.7z
+*.rar
+*.tar
+*.tar.gz
+*.tmp
+*.temp
+*.part
+
+# Python helper caches
+__pycache__/
+*.py[cod]
+
+# Do not ignore Gradle Wrapper files
+!gradle/wrapper/gradle-wrapper.jar
+!gradle/wrapper/gradle-wrapper.properties

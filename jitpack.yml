@@ -1,0 +1,9 @@
+jdk:
+  - openjdk17
+
+before_install:
+  - chmod +x gradlew tools/jitpack-android-setup.sh
+  - ./tools/jitpack-android-setup.sh
+
+install:
+  - ./gradlew clean publishReleasePublicationToMavenLocal --no-daemon --stacktrace

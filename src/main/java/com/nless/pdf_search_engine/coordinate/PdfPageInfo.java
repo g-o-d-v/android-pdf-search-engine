@@ -16,13 +16,12 @@ public class PdfPageInfo {
 
     /**
      * 搜索结果来源页面宽度。
-     * PDFium 文本搜索一般是 PDF point 宽度。
-     * OCR 搜索第一版可能是 bitmap 宽度。
+     * 当前统一为 PDF point 宽度；OCR Bitmap 坐标会在引擎内部先转换成 PDF point。
      */
     public final float sourcePageWidth;
 
     /**
-     * 搜索结果来源页面高度。
+     * 搜索结果来源页面高度，当前统一为 PDF point 高度。
      */
     public final float sourcePageHeight;
 

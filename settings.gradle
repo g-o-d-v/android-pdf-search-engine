@@ -1,24 +1,28 @@
 pluginManagement {
     repositories {
-        maven { url 'https://maven.aliyun.com/repository/gradle-plugin' }
-        maven { url 'https://maven.aliyun.com/repository/google' }
-        maven { url 'https://maven.aliyun.com/repository/public' }
         google()
         mavenCentral()
         gradlePluginPortal()
+
+        if (providers.gradleProperty('useAliyunMirrors').orNull?.toBoolean()) {
+            maven { url 'https://maven.aliyun.com/repository/gradle-plugin' }
+            maven { url 'https://maven.aliyun.com/repository/google' }
+            maven { url 'https://maven.aliyun.com/repository/public' }
+        }
     }
 }
 
 dependencyResolutionManagement {
     repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
     repositories {
-        maven { url 'https://maven.aliyun.com/repository/google' }
-        maven { url 'https://maven.aliyun.com/repository/public' }
         google()
         mavenCentral()
-        maven { url 'https://jitpack.io' }
+        if (providers.gradleProperty('useAliyunMirrors').orNull?.toBoolean()) {
+            maven { url 'https://maven.aliyun.com/repository/google' }
+            maven { url 'https://maven.aliyun.com/repository/public' }
+        }
     }
 }
 
-// 声明这是根项目
-rootProject.name = "pdf-search-engine"
+rootProject.name = 'pdf-search-engine'
+include ':sample'

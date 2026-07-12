@@ -116,27 +116,41 @@ Java_com_nless_pdf_1search_1engine_paddle_PaddleOcrNative_forward(
 
     LOGI("infer_ocr finished with boxes %ld", results.size());
 
-    // 将 std::vector<ppredictor::OCRPredictResult> 序列化成 float 数组，
-    // 传输到 Java 层再反序列化。
+    // 序列化协议 v2：全局 magic + version，随后逐块写入。
+    // v2 在旧协议基础上增加与 word_index 一一对应的字符级紧致框。
+    // 使用小整数 float，避免跨 JNI 传输时的精度和兼容问题。
+    constexpr float kResultMagic = -32001.f;
+    constexpr float kResultVersion = 2.f;
     std::vector<float> float_arr;
+    float_arr.push_back(kResultMagic);
+    float_arr.push_back(kResultVersion);
 
     for (const ppredictor::OCRPredictResult &r : results) {
       float_arr.push_back(static_cast<float>(r.points.size()));
       float_arr.push_back(static_cast<float>(r.word_index.size()));
       float_arr.push_back(r.score);
+      float_arr.push_back(static_cast<float>(r.char_boxes.size()));
 
-      // add det point
+      // detection quad points
       for (const std::vector<int> &point : r.points) {
         float_arr.push_back(static_cast<float>(point.at(0)));
         float_arr.push_back(static_cast<float>(point.at(1)));
       }
 
-      // add rec word idx
+      // recognition token indices
       for (int index : r.word_index) {
         float_arr.push_back(static_cast<float>(index));
       }
 
-      // add cls result
+      // normalized tight boxes: left, top, right, bottom
+      for (const std::array<float, 4> &box : r.char_boxes) {
+        float_arr.push_back(box[0]);
+        float_arr.push_back(box[1]);
+        float_arr.push_back(box[2]);
+        float_arr.push_back(box[3]);
+      }
+
+      // cls result
       float_arr.push_back(static_cast<float>(r.cls_label));
       float_arr.push_back(r.cls_score);
     }

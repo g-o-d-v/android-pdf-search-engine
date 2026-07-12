@@ -1,0 +1,47 @@
+package com.nless.pdf_search_engine.core;
+
+/**
+ * 与文档内容提取无关的查询选项。
+ * 修改这些选项不会让 OCR / 文本层页面索引失效。
+ */
+public class PdfSearchQueryOptions {
+
+    /** 是否区分大小写。 */
+    public boolean caseSensitive = false;
+
+    /** 使用 Unicode NFKC 规范化，覆盖常见全角/半角差异。 */
+    public boolean normalizeUnicode = true;
+
+    /** 连续空格、制表符和换行折叠为一个空格。 */
+    public boolean collapseWhitespace = true;
+
+    /** 允许关键词跨 OCR 行或 PDF 文本换行匹配。 */
+    public boolean allowCrossLineMatch = true;
+
+    /** 匹配时移除所有空白。适合版面插入了错误空格的 PDF，默认关闭。 */
+    public boolean ignoreWhitespaceForMatching = false;
+
+    /** 合并英文行末连字符，例如 "search-\nengine"。 */
+    public boolean joinHyphenatedLineBreaks = true;
+
+    /** 仅匹配完整英文/数字单词。中文查询通常保持 false。 */
+    public boolean wholeWord = false;
+
+    /** 结果前后文字符数。 */
+    public int contextCharacters = 24;
+
+    public PdfSearchQueryOptions() {
+    }
+
+    public PdfSearchQueryOptions(PdfSearchQueryOptions other) {
+        if (other == null) return;
+        caseSensitive = other.caseSensitive;
+        normalizeUnicode = other.normalizeUnicode;
+        collapseWhitespace = other.collapseWhitespace;
+        allowCrossLineMatch = other.allowCrossLineMatch;
+        ignoreWhitespaceForMatching = other.ignoreWhitespaceForMatching;
+        joinHyphenatedLineBreaks = other.joinHyphenatedLineBreaks;
+        wholeWord = other.wholeWord;
+        contextCharacters = other.contextCharacters;
+    }
+}

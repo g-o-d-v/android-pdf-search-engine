@@ -2,16 +2,18 @@ package com.nless.pdf_search_engine.ocr;
 
 import android.content.Context;
 import android.graphics.Bitmap;
-import android.graphics.Canvas;
-import android.graphics.pdf.PdfRenderer;
 import android.net.Uri;
-import android.os.ParcelFileDescriptor;
 
 public class OcrPageRenderer {
 
-    /**
-     * 兼容旧调用：只返回 Bitmap。
-     */
+    public OcrDocumentSession openSession(Context context, Uri pdfUri) throws Exception {
+        if (context == null || pdfUri == null) {
+            throw new IllegalArgumentException("context/pdfUri is null");
+        }
+        return new OcrDocumentSession(context, pdfUri);
+    }
+
+    /** 兼容旧调用：只返回 Bitmap。 */
     public Bitmap renderPageForOcr(
             Context context,
             Uri pdfUri,
@@ -24,12 +26,11 @@ public class OcrPageRenderer {
                 pageIndex,
                 targetWidthPx
         );
-
         return renderedPage != null ? renderedPage.bitmap : null;
     }
 
     /**
-     * 新接口：返回 Bitmap + PDF 页面尺寸。
+     * 单页兼容接口。全文 OCR 应使用 openSession() 复用 PdfRenderer。
      */
     public OcrRenderedPage renderPage(
             Context context,
@@ -37,109 +38,18 @@ public class OcrPageRenderer {
             int pageIndex,
             int targetWidthPx
     ) {
-        if (context == null || pdfUri == null) return null;
-        if (pageIndex < 0 || targetWidthPx <= 0) return null;
-
-        ParcelFileDescriptor pfd = null;
-        PdfRenderer renderer = null;
-        PdfRenderer.Page page = null;
-
-        try {
-            pfd = context.getContentResolver().openFileDescriptor(pdfUri, "r");
-            if (pfd == null) return null;
-
-            renderer = new PdfRenderer(pfd);
-
-            if (pageIndex >= renderer.getPageCount()) {
-                return null;
-            }
-
-            page = renderer.openPage(pageIndex);
-
-            int pageWidth = page.getWidth();
-            int pageHeight = page.getHeight();
-
-            if (pageWidth <= 0 || pageHeight <= 0) {
-                return null;
-            }
-
-            float scale = targetWidthPx / (float) pageWidth;
-            int targetHeightPx = Math.max(1, Math.round(pageHeight * scale));
-
-            Bitmap bitmap = Bitmap.createBitmap(
-                    targetWidthPx,
-                    targetHeightPx,
-                    Bitmap.Config.ARGB_8888
-            );
-
-            Canvas canvas = new Canvas(bitmap);
-            canvas.drawColor(android.graphics.Color.WHITE);
-
-            page.render(
-                    bitmap,
-                    null,
-                    null,
-                    PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY
-            );
-
-            return new OcrRenderedPage(
-                    pageIndex,
-                    bitmap,
-                    bitmap.getWidth(),
-                    bitmap.getHeight(),
-                    pageWidth,
-                    pageHeight
-            );
-
-        } catch (Exception e) {
-            e.printStackTrace();
+        try (OcrDocumentSession session = openSession(context, pdfUri)) {
+            return session.renderPage(pageIndex, targetWidthPx);
+        } catch (Throwable error) {
             return null;
-
-        } finally {
-            try {
-                if (page != null) page.close();
-            } catch (Exception ignored) {
-            }
-
-            try {
-                if (renderer != null) renderer.close();
-            } catch (Exception ignored) {
-            }
-
-            try {
-                if (pfd != null) pfd.close();
-            } catch (Exception ignored) {
-            }
         }
     }
 
     public int getPageCount(Context context, Uri pdfUri) {
-        if (context == null || pdfUri == null) return -1;
-
-        ParcelFileDescriptor pfd = null;
-        PdfRenderer renderer = null;
-
-        try {
-            pfd = context.getContentResolver().openFileDescriptor(pdfUri, "r");
-            if (pfd == null) return -1;
-
-            renderer = new PdfRenderer(pfd);
-            return renderer.getPageCount();
-
-        } catch (Exception e) {
-            e.printStackTrace();
+        try (OcrDocumentSession session = openSession(context, pdfUri)) {
+            return session.getPageCount();
+        } catch (Throwable error) {
             return -1;
-
-        } finally {
-            try {
-                if (renderer != null) renderer.close();
-            } catch (Exception ignored) {
-            }
-
-            try {
-                if (pfd != null) pfd.close();
-            } catch (Exception ignored) {
-            }
         }
     }
 }

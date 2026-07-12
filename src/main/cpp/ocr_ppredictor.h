@@ -7,6 +7,7 @@
 #include "ppredictor.h"
 #include <opencv2/opencv.hpp>
 #include <paddle_api.h>
+#include <array>
 #include <string>
 
 namespace ppredictor {
@@ -27,8 +28,18 @@ struct OCR_Config {
 struct OCRPredictResult {
   std::vector<int> word_index;
   std::vector<std::vector<int>> points;
-  float score;
-  float cls_score;
+
+  /**
+   * 每个识别 token 在矫正后文本行图像中的紧致归一化矩形：
+   * [left, top, right, bottom]，范围 0..1。
+   *
+   * 该矩形综合 CTC 时间步对齐和前景像素投影生成，顺序与 word_index 一致。
+   * Java 层可直接合并命中 token 的矩形，再映射回检测四边形，避免按字符串长度均分。
+   */
+  std::vector<std::array<float, 4>> char_boxes;
+
+  float score = 0.f;
+  float cls_score = 0.f;
   int cls_label = -1;
 };
 

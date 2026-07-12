@@ -1,21 +1,164 @@
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
+import java.security.MessageDigest
+import java.util.jar.JarInputStream
+import java.util.zip.ZipFile
+
 plugins {
-    id 'com.android.library' version '8.2.0'
+    id 'com.android.library' version '8.6.1'
+    id 'com.android.application' version '8.6.1' apply false
+    id 'maven-publish'
 }
+
+def propertyOrEnv = { String propertyName, String environmentName, String fallback = '' ->
+    def value = providers.gradleProperty(propertyName).orNull
+    if (value == null || value.toString().trim().isEmpty()) {
+        value = System.getenv(environmentName)
+    }
+    return value == null || value.toString().trim().isEmpty()
+            ? fallback
+            : value.toString().trim()
+}
+
+def digestHex = { File artifact, String algorithm ->
+    MessageDigest digest = MessageDigest.getInstance(algorithm)
+    artifact.withInputStream { input ->
+        byte[] buffer = new byte[64 * 1024]
+        int read
+        while ((read = input.read(buffer)) >= 0) {
+            if (read > 0) digest.update(buffer, 0, read)
+        }
+    }
+    return digest.digest().collect { String.format('%02x', (it & 0xff)) }.join('')
+}
+
+def atomicReplace = { File source, File destination ->
+    destination.parentFile.mkdirs()
+    try {
+        Files.move(
+                source.toPath(),
+                destination.toPath(),
+                StandardCopyOption.REPLACE_EXISTING,
+                StandardCopyOption.ATOMIC_MOVE
+        )
+    } catch (java.nio.file.AtomicMoveNotSupportedException ignored) {
+        Files.move(
+                source.toPath(),
+                destination.toPath(),
+                StandardCopyOption.REPLACE_EXISTING
+        )
+    }
+}
+
+def downloadWithRetries = { String url, File destination ->
+    Exception lastError = null
+    for (int attempt = 1; attempt <= 3; attempt++) {
+        try {
+            project.delete(destination)
+            logger.lifecycle("Download attempt ${attempt}/3: ${url}")
+            ant.get(
+                    src: url,
+                    dest: destination,
+                    verbose: true,
+                    usetimestamp: false
+            )
+            if (!destination.isFile() || destination.length() == 0L) {
+                throw new GradleException("Downloaded file is empty: ${url}")
+            }
+            return
+        } catch (Exception error) {
+            lastError = error
+            project.delete(destination)
+            if (attempt < 3) Thread.sleep(1_000L * attempt)
+        }
+    }
+    throw new GradleException(
+            "Unable to download the official OCR model after 3 attempts: ${url}",
+            lastError
+    )
+}
+
+// JitPack provides GROUP, ARTIFACT and VERSION for the current repository/tag.
+def onJitPack = 'true'.equalsIgnoreCase(System.getenv('JITPACK'))
+group = onJitPack
+        ? (System.getenv('GROUP') ?: 'com.github.g-o-d-v')
+        : propertyOrEnv('GROUP', 'PUBLISH_GROUP', 'com.github.g-o-d-v')
+version = onJitPack
+        ? (System.getenv('VERSION') ?: '0.1.0-alpha01')
+        : propertyOrEnv('VERSION_NAME', 'PUBLISH_VERSION', '0.1.0-alpha01')
+
+def artifactIdValue = onJitPack
+        ? (System.getenv('ARTIFACT') ?: 'android-pdf-search-engine')
+        : propertyOrEnv('POM_ARTIFACT_ID', 'PUBLISH_ARTIFACT_ID', 'android-pdf-search-engine')
+def libraryVersion = version.toString()
+def supportedAbis = propertyOrEnv('SUPPORTED_ABIS', 'PUBLISH_ABIS', 'arm64-v8a,armeabi-v7a')
+        .split(',')
+        .collect { it.trim() }
+        .findAll { !it.isEmpty() }
+        .unique()
+
+if (supportedAbis.isEmpty()) {
+    throw new GradleException('SUPPORTED_ABIS must contain at least one Android ABI.')
+}
+
+// Official, pre-optimized Paddle Lite models distributed by PaddlePaddle.
+// They are cached under GRADLE_USER_HOME and copied to generated Android assets.
+def officialModelSet = 'PP-OCRv4_mobile'
+def officialModelCacheVersion = 'paddle-lite-demo-ppocrv4-v1'
+def officialModelCacheDir = new File(
+        gradle.gradleUserHomeDir,
+        "caches/android-pdf-search-engine/${officialModelCacheVersion}"
+)
+def generatedOfficialModelDir = file("${buildDir}/generated/officialOcrModels")
+def generatedLegalAssetsDir = file("${buildDir}/generated/legalAssets")
+def officialModels = [
+        [
+                key     : 'cls',
+                target  : 'cls.nb',
+                minBytes: 100_000L,
+                url     : 'https://paddlelite-demo.bj.bcebos.com/demo/ocr/models/ch_ppocr_mobile_v2.0_cls_slim_opt_for_cpu_v2_10_rc.tar.gz',
+                archive : 'ch_ppocr_mobile_v2.0_cls_slim_opt_for_cpu_v2_10_rc.tar.gz'
+        ],
+        [
+                key     : 'det',
+                target  : 'det.nb',
+                minBytes: 500_000L,
+                url     : 'https://paddlelite-demo.bj.bcebos.com/paddle-x/ocr/models/PP-OCRv4_mobile_det.tar.gz',
+                archive : 'PP-OCRv4_mobile_det.tar.gz'
+        ],
+        [
+                key     : 'rec',
+                target  : 'rec.nb',
+                minBytes: 1_000_000L,
+                url     : 'https://paddlelite-demo.bj.bcebos.com/paddle-x/ocr/models/PP-OCRv4_mobile_rec.tar.gz',
+                archive : 'PP-OCRv4_mobile_rec.tar.gz'
+        ]
+]
+
+def requiredSourceAssets = ['ppocr_keys_v1.txt']
+def requiredNativeLibraries = [
+        'libc++_shared.so',
+        'libopencv_java4.so',
+        'libpaddle_light_api_shared.so'
+]
+def forbiddenReleaseFiles = [
+        'libhiai.so',
+        'libhiai_ir.so',
+        'libhiai_ir_build.so',
+        'libpaddle_api_light_bundled.a'
+]
 
 android {
     namespace 'com.nless.pdf_search_engine'
-    compileSdk 34
-
-    ndkVersion "21.4.7075529"
+    compileSdk 35
+    ndkVersion '21.4.7075529'
 
     defaultConfig {
         minSdk 24
-        targetSdk 34
-
-        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+        consumerProguardFiles 'consumer-rules.pro'
 
         ndk {
-            abiFilters 'arm64-v8a'
+            abiFilters.addAll(supportedAbis)
         }
 
         externalNativeBuild {
@@ -23,12 +166,20 @@ android {
                 cppFlags ''
             }
         }
+
+        buildConfigField 'String', 'LIBRARY_VERSION', '"' + libraryVersion + '"'
+        buildConfigField 'String', 'LIBRARY_ARTIFACT', '"' + artifactIdValue + '"'
+        buildConfigField 'String', 'LIBRARY_ABIS', '"' + supportedAbis.join(',') + '"'
+    }
+
+    buildFeatures {
+        buildConfig true
     }
 
     externalNativeBuild {
         cmake {
-            path file("src/main/cpp/CMakeLists.txt")
-             version "3.22.1"
+            path file('src/main/cpp/CMakeLists.txt')
+            version '3.22.1'
         }
     }
 
@@ -47,11 +198,40 @@ android {
         targetCompatibility JavaVersion.VERSION_17
     }
 
-
     sourceSets {
         main {
-            assets.srcDirs = ['src/main/assets']
+            assets.srcDirs = [
+                    'src/main/assets',
+                    generatedOfficialModelDir,
+                    generatedLegalAssetsDir
+            ]
             jniLibs.srcDirs = ['src/main/jniLibs']
+        }
+    }
+
+    packaging {
+        jniLibs {
+            useLegacyPackaging = false
+        }
+        resources {
+            excludes += [
+                    'META-INF/DEPENDENCIES',
+                    'META-INF/INDEX.LIST'
+            ]
+        }
+    }
+
+    lint {
+        abortOnError true
+        checkReleaseBuilds true
+        warningsAsErrors false
+        textReport true
+    }
+
+    publishing {
+        singleVariant('release') {
+            withSourcesJar()
+            withJavadocJar()
         }
     }
 }
@@ -61,6 +241,380 @@ dependencies {
     androidTestImplementation 'androidx.test.ext:junit:1.1.5'
     androidTestImplementation 'androidx.test.espresso:espresso-core:3.5.1'
 
-    // PDFView 适配层，第一阶段可以先直接依赖
+    // Adapter API only. The consuming app provides the viewer/PDFium runtime.
     compileOnly 'com.github.mhiew:android-pdf-viewer:3.2.0-beta.3'
+}
+
+tasks.register('prepareOfficialOcrModels') {
+    group = 'build setup'
+    description = 'Downloads official PaddlePaddle PP-OCRv4 Paddle Lite .nb models.'
+    outputs.dir generatedOfficialModelDir
+    outputs.upToDateWhen {
+        officialModels.every { model ->
+            File candidate = new File(generatedOfficialModelDir, model.target)
+            candidate.isFile() && candidate.length() >= model.minBytes
+        }
+    }
+
+    doLast {
+        officialModelCacheDir.mkdirs()
+        generatedOfficialModelDir.mkdirs()
+
+        officialModels.each { model ->
+            File cachedModel = new File(officialModelCacheDir, model.target)
+
+            if (!cachedModel.isFile() || cachedModel.length() < model.minBytes) {
+                File archive = new File(officialModelCacheDir, model.archive)
+                File archivePart = new File(officialModelCacheDir, model.archive + '.part')
+                File extractDir = new File(officialModelCacheDir, 'extract-' + model.key)
+
+                if (!archive.isFile() || archive.length() == 0L) {
+                    logger.lifecycle("Downloading official PaddlePaddle OCR model: ${model.url}")
+                    delete archivePart
+                    downloadWithRetries(model.url, archivePart)
+                    atomicReplace(archivePart, archive)
+                }
+
+                delete extractDir
+                extractDir.mkdirs()
+                try {
+                    ant.untar(src: archive, dest: extractDir, compression: 'gzip', overwrite: true)
+                } catch (Exception firstError) {
+                    logger.warn("Cached model archive is invalid; downloading it again: ${archive}")
+                    delete archive, archivePart, extractDir
+                    downloadWithRetries(model.url, archivePart)
+                    atomicReplace(archivePart, archive)
+                    extractDir.mkdirs()
+                    ant.untar(src: archive, dest: extractDir, compression: 'gzip', overwrite: true)
+                }
+
+                List<File> candidates = fileTree(extractDir) {
+                    include '**/*.nb'
+                }.files.toList().sort { it.absolutePath }
+
+                File selected = candidates.find {
+                    it.name.toLowerCase(Locale.ROOT).contains(model.key)
+                }
+                if (selected == null && candidates.size() == 1) selected = candidates.first()
+                if (selected == null) {
+                    throw new GradleException(
+                            "Official archive ${archive.name} did not contain an identifiable ${model.key} .nb model. " +
+                                    "Candidates: ${candidates*.name}"
+                    )
+                }
+                if (selected.length() < model.minBytes) {
+                    throw new GradleException(
+                            "Extracted official model is unexpectedly small: ${selected} (${selected.length()} bytes)"
+                    )
+                }
+
+                File tempModel = new File(officialModelCacheDir, model.target + '.part')
+                Files.copy(selected.toPath(), tempModel.toPath(), StandardCopyOption.REPLACE_EXISTING)
+                atomicReplace(tempModel, cachedModel)
+                delete extractDir
+            }
+
+            File generatedModel = new File(generatedOfficialModelDir, model.target)
+            Files.copy(cachedModel.toPath(), generatedModel.toPath(), StandardCopyOption.REPLACE_EXISTING)
+        }
+
+        StringBuilder report = new StringBuilder()
+        report.append("Official model set: ${officialModelSet}\n")
+        report.append('Source: PaddlePaddle/Paddle-Lite-Demo and PaddleX-Lite-Deploy\n\n')
+        officialModels.each { model ->
+            File generatedModel = new File(generatedOfficialModelDir, model.target)
+            report.append("${model.target}\n")
+            report.append("SHA-256: ${digestHex(generatedModel, 'SHA-256')}\n")
+            report.append("URL: ${model.url}\n\n")
+        }
+        new File(generatedOfficialModelDir, 'MODEL_SHA256.txt')
+                .setText(report.toString(), 'UTF-8')
+    }
+}
+
+tasks.register('prepareLegalAssets', Copy) {
+    group = 'build setup'
+    description = 'Embeds the project and third-party license notices in the AAR.'
+    into new File(generatedLegalAssetsDir, 'pdf_search_engine_licenses')
+    from('LICENSE')
+    from('NOTICE')
+    from('THIRD_PARTY_NOTICES.md')
+    from('MODEL_PROVENANCE.md')
+    from('LICENSES') {
+        into 'LICENSES'
+    }
+}
+
+tasks.named('preBuild').configure {
+    dependsOn tasks.named('prepareOfficialOcrModels')
+    dependsOn tasks.named('prepareLegalAssets')
+}
+
+tasks.register('verifyReleaseInputs') {
+    group = 'verification'
+    description = 'Checks official models, ABI matrix, manifest hygiene and open-source metadata.'
+    dependsOn tasks.named('prepareOfficialOcrModels')
+    dependsOn tasks.named('prepareLegalAssets')
+
+    doLast {
+        requiredSourceAssets.each { name ->
+            File target = file("src/main/assets/${name}")
+            if (!target.isFile() || target.length() == 0L) {
+                throw new GradleException("Missing or empty source asset: ${target}")
+            }
+        }
+
+        officialModels.each { model ->
+            File target = new File(generatedOfficialModelDir, model.target)
+            if (!target.isFile() || target.length() < model.minBytes) {
+                throw new GradleException("Missing or invalid official OCR model: ${target}")
+            }
+        }
+
+        supportedAbis.each { abi ->
+            File nativeDir = file("src/main/jniLibs/${abi}")
+            if (!nativeDir.isDirectory()) {
+                throw new GradleException("Missing native ABI directory: ${nativeDir}")
+            }
+            requiredNativeLibraries.each { name ->
+                File target = new File(nativeDir, name)
+                if (!target.isFile() || target.length() == 0L) {
+                    throw new GradleException("Missing or empty ${abi} native library: ${target}")
+                }
+            }
+            forbiddenReleaseFiles.each { name ->
+                File target = new File(nativeDir, name)
+                if (target.exists()) {
+                    throw new GradleException("Unused release binary is still present: ${target}")
+                }
+            }
+        }
+
+        Set<String> actualAbis = new LinkedHashSet<>(
+                file('src/main/jniLibs').listFiles()
+                        ?.findAll { it.isDirectory() }
+                        ?.collect { it.name } ?: []
+        )
+        Set<String> expectedAbis = new LinkedHashSet<>(supportedAbis)
+        if (actualAbis != expectedAbis) {
+            throw new GradleException(
+                    "ABI directories must match SUPPORTED_ABIS=${supportedAbis}; found ${actualAbis}"
+            )
+        }
+
+        String manifest = file('src/main/AndroidManifest.xml').getText('UTF-8')
+        if (manifest.contains('<application')) {
+            throw new GradleException('Library manifest must not contribute an <application> element.')
+        }
+
+        [
+                'LICENSE',
+                'NOTICE',
+                'CONTRIBUTING.md',
+                'SECURITY.md',
+                'THIRD_PARTY_NOTICES.md',
+                'MODEL_PROVENANCE.md',
+        ].each { name ->
+            if (!file(name).isFile()) {
+                throw new GradleException("Missing release/open-source file: ${name}")
+            }
+        }
+    }
+}
+
+def verifyReleaseInputsTask = tasks.named('verifyReleaseInputs')
+
+tasks.matching {
+    it.name == 'bundleReleaseAar'
+}.configureEach {
+    dependsOn verifyReleaseInputsTask
+}
+
+tasks.register('verifyReleaseAar') {
+    group = 'verification'
+    description = 'Inspects the release AAR for required and forbidden entries.'
+    dependsOn 'bundleReleaseAar'
+
+    doLast {
+        File aar = layout.buildDirectory.file("outputs/aar/${project.name}-release.aar").get().asFile
+        if (!aar.isFile()) throw new GradleException("Release AAR not found: ${aar}")
+
+        Set<String> entries = [] as Set<String>
+        new ZipFile(aar).withCloseable { zip ->
+            zip.entries().each { entries.add(it.name) }
+
+            def classesEntry = zip.getEntry('classes.jar')
+            if (classesEntry == null) {
+                throw new GradleException('Release AAR is missing classes.jar')
+            }
+            new JarInputStream(zip.getInputStream(classesEntry)).withCloseable { jar ->
+                def jarEntry
+                while ((jarEntry = jar.nextJarEntry) != null) {
+                    if (jarEntry.name.startsWith('com/nless/sandbox/')) {
+                        throw new GradleException(
+                                "Sample application class leaked into release AAR: ${jarEntry.name}"
+                        )
+                    }
+                }
+            }
+        }
+
+        [
+                'AndroidManifest.xml',
+                'classes.jar',
+                'proguard.txt',
+                'assets/cls.nb',
+                'assets/det.nb',
+                'assets/rec.nb',
+                'assets/MODEL_SHA256.txt',
+                'assets/ppocr_keys_v1.txt',
+                'assets/pdf_search_engine_licenses/LICENSE',
+                'assets/pdf_search_engine_licenses/NOTICE',
+                'assets/pdf_search_engine_licenses/THIRD_PARTY_NOTICES.md',
+                'assets/pdf_search_engine_licenses/MODEL_PROVENANCE.md'
+        ].each { expected ->
+            if (!entries.contains(expected)) {
+                throw new GradleException("Release AAR is missing: ${expected}")
+            }
+        }
+
+        supportedAbis.each { abi ->
+            (['libNative.so'] + requiredNativeLibraries).each { libraryName ->
+                String expected = "jni/${abi}/${libraryName}"
+                if (!entries.contains(expected)) {
+                    throw new GradleException("Release AAR is missing: ${expected}")
+                }
+            }
+        }
+
+        entries.findAll { it.startsWith('jni/') && it.count('/') >= 2 }.each { nativeEntry ->
+            String abi = nativeEntry.split('/')[1]
+            if (!supportedAbis.contains(abi)) {
+                throw new GradleException("Unexpected ABI in release AAR: ${nativeEntry}")
+            }
+        }
+
+        entries.findAll {
+            forbiddenReleaseFiles.any { forbidden -> it.endsWith('/' + forbidden) }
+        }.each { unexpected ->
+            throw new GradleException("Forbidden binary packaged in release AAR: ${unexpected}")
+        }
+    }
+}
+
+tasks.register('generateReleaseChecksums') {
+    group = 'publishing'
+    description = 'Generates SHA-256 files for the release AAR and local Maven artifacts.'
+    dependsOn 'bundleReleaseAar'
+
+    doLast {
+        File outputDir = layout.buildDirectory.dir('release-checksums').get().asFile
+        outputDir.mkdirs()
+
+        List<File> artifacts = []
+        File aar = layout.buildDirectory.file("outputs/aar/${project.name}-release.aar").get().asFile
+        if (aar.isFile()) artifacts.add(aar)
+
+        File repositoryDir = layout.buildDirectory.dir('repo').get().asFile
+        if (repositoryDir.isDirectory()) {
+            repositoryDir.eachFileRecurse { candidate ->
+                if (candidate.isFile() && !candidate.name.endsWith('.sha256')) {
+                    artifacts.add(candidate)
+                }
+            }
+        }
+
+        artifacts.unique().each { artifact ->
+            String hex = digestHex(artifact, 'SHA-256')
+            new File(outputDir, artifact.name + '.sha256')
+                    .setText(hex + '  ' + artifact.name + '\n', 'UTF-8')
+        }
+    }
+}
+
+afterEvaluate {
+    publishing {
+        publications {
+            release(MavenPublication) {
+                from components.release
+                groupId = project.group.toString()
+                artifactId = artifactIdValue
+                version = project.version.toString()
+
+                pom {
+                    name = propertyOrEnv(
+                            'POM_NAME',
+                            'PUBLISH_NAME',
+                            'Android PDF Search Engine'
+                    )
+                    description = propertyOrEnv(
+                            'POM_DESCRIPTION',
+                            'PUBLISH_DESCRIPTION',
+                            'Android PDF text-layer and OCR search library with persistent page indexing.'
+                    )
+                    url = propertyOrEnv(
+                            'POM_URL',
+                            'PUBLISH_URL',
+                            'https://github.com/g-o-d-v/android-pdf-search-engine'
+                    )
+
+                    licenses {
+                        license {
+                            name = 'Apache License, Version 2.0'
+                            url = 'https://www.apache.org/licenses/LICENSE-2.0.txt'
+                            distribution = 'repo'
+                        }
+                    }
+
+                    developers {
+                        developer {
+                            id = propertyOrEnv('POM_DEVELOPER_ID', 'PUBLISH_DEVELOPER_ID', 'g-o-d-v')
+                            name = propertyOrEnv('POM_DEVELOPER_NAME', 'PUBLISH_DEVELOPER_NAME', 'g-o-d-v')
+                            email = propertyOrEnv('POM_DEVELOPER_EMAIL', 'PUBLISH_DEVELOPER_EMAIL', '3472966871@qq.com')
+                        }
+                    }
+
+                    scm {
+                        url = propertyOrEnv(
+                                'POM_SCM_URL',
+                                'PUBLISH_SCM_URL',
+                                'https://github.com/g-o-d-v/android-pdf-search-engine'
+                        )
+                        connection = propertyOrEnv(
+                                'POM_SCM_CONNECTION',
+                                'PUBLISH_SCM_CONNECTION',
+                                'scm:git:https://github.com/g-o-d-v/android-pdf-search-engine.git'
+                        )
+                        developerConnection = propertyOrEnv(
+                                'POM_SCM_DEV_CONNECTION',
+                                'PUBLISH_SCM_DEV_CONNECTION',
+                                'scm:git:ssh://git@github.com/g-o-d-v/android-pdf-search-engine.git'
+                        )
+                    }
+                }
+            }
+        }
+
+        repositories {
+            maven {
+                name = 'localBuild'
+                url = layout.buildDirectory.dir('repo')
+            }
+        }
+    }
+
+    tasks.named('generateReleaseChecksums').configure {
+        dependsOn 'publishReleasePublicationToLocalBuildRepository'
+    }
+
+    tasks.register('releaseCandidate') {
+        group = 'publishing'
+        description = 'Builds, tests and verifies the same release AAR that JitPack publishes.'
+        dependsOn 'testReleaseUnitTest'
+        dependsOn ':sample:assembleRelease'
+        dependsOn 'lintRelease'
+        dependsOn 'verifyReleaseAar'
+        dependsOn 'publishReleasePublicationToLocalBuildRepository'
+        dependsOn 'generateReleaseChecksums'
+    }
 }

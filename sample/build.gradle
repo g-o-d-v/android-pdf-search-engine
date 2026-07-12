@@ -1,0 +1,57 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'com.nless.sandbox'
+    compileSdk 35
+
+    defaultConfig {
+        applicationId 'com.nless.sandbox'
+        minSdk 26
+        targetSdk 35
+        versionCode 1
+        versionName rootProject.version.toString()
+
+        testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
+    }
+
+    packagingOptions {
+        jniLibs {
+            useLegacyPackaging false
+            pickFirsts += ['lib/**/libc++_shared.so']
+        }
+    }
+
+    buildTypes {
+        debug {
+            minifyEnabled false
+        }
+        release {
+            // The sample Release build intentionally enables R8 so CI verifies
+            // the library's packaged consumer rules and JNI name preservation.
+            minifyEnabled true
+            shrinkResources true
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    lint {
+        abortOnError true
+        checkReleaseBuilds true
+    }
+}
+
+dependencies {
+    implementation 'androidx.appcompat:appcompat:1.6.1'
+    implementation 'com.google.android.material:material:1.11.0'
+    implementation 'androidx.constraintlayout:constraintlayout:2.1.4'
+
+    implementation project(':')
+    implementation 'com.github.mhiew:android-pdf-viewer:3.2.0-beta.3'
+}

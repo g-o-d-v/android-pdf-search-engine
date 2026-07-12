@@ -1,0 +1,9 @@
+Android PDF Search Engine
+Copyright 2026 g-o-d-v
+
+Licensed under the Apache License, Version 2.0.
+
+This distribution includes or downloads components from PaddlePaddle,
+OpenCV, LLVM libc++, PDFium and AndroidPdfViewer. Their licenses and source
+information are listed in THIRD_PARTY_NOTICES.md, MODEL_PROVENANCE.md and the
+LICENSES directory.

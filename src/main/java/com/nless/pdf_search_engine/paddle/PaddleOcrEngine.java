@@ -2,7 +2,6 @@ package com.nless.pdf_search_engine.paddle;
 
 import android.content.Context;
 import android.graphics.Bitmap;
-import android.graphics.Matrix;
 import android.graphics.RectF;
 import android.util.Log;
 
@@ -27,6 +26,8 @@ public class PaddleOcrEngine {
     private final PaddleOcrNative nativeApi = new PaddleOcrNative();
 
     private long nativePointer = 0;
+    private int activeRecognitions = 0;
+    private boolean releaseRequested = false;
     private final List<String> wordDict = new ArrayList<>();
 
     private PaddleOcrEngine() {
@@ -67,6 +68,7 @@ public class PaddleOcrEngine {
                     4,
                     "LITE_POWER_HIGH"
             );
+            releaseRequested = false;
             Log.i(TAG, "Paddle OCR init success, pointer=" + nativePointer);
         } catch (Exception e) {
             Log.e(TAG, "初始化 Paddle OCR 失败", e);
@@ -74,25 +76,38 @@ public class PaddleOcrEngine {
     }
 
     public synchronized void release() {
-        if (nativePointer != 0) {
-            try {
-                nativeApi.release(nativePointer);
-            } catch (Exception e) {
-                Log.e(TAG, "release OCR failed", e);
-            }
-            nativePointer = 0;
+        releaseRequested = true;
+        releaseNativeIfIdle();
+    }
+
+    /** 不打断正在进行的 native 推理。 */
+    public synchronized void releaseIfIdle() {
+        releaseRequested = true;
+        releaseNativeIfIdle();
+    }
+
+    private void releaseNativeIfIdle() {
+        if (activeRecognitions != 0 || nativePointer == 0) return;
+        try {
+            nativeApi.release(nativePointer);
+        } catch (Exception e) {
+            Log.e(TAG, "release OCR failed", e);
         }
+        nativePointer = 0;
+        releaseRequested = false;
     }
 
     public OcrPageResult recognizePage(Context context, Bitmap bitmap) {
         if (bitmap == null || bitmap.isRecycled()) return null;
 
-        if (nativePointer == 0) {
-            initEngine(context.getApplicationContext());
-        }
-
-        if (nativePointer == 0) {
-            return null;
+        final long pointerForCall;
+        synchronized (this) {
+            if (nativePointer == 0) {
+                initEngine(context.getApplicationContext());
+            }
+            if (nativePointer == 0) return null;
+            activeRecognitions++;
+            pointerForCall = nativePointer;
         }
 
         Bitmap input = null;
@@ -110,9 +125,9 @@ public class PaddleOcrEngine {
             float[] resultArray;
             synchronized (OCR_LOCK) {
                 resultArray = nativeApi.forward(
-                        nativePointer,
+                        pointerForCall,
                         input,
-                        960,
+                        chooseDetectionMaxSide(input),
                         1,
                         0,
                         1
@@ -132,6 +147,10 @@ public class PaddleOcrEngine {
         } finally {
             if (input != null && input != bitmap && !input.isRecycled()) {
                 input.recycle();
+            }
+            synchronized (this) {
+                activeRecognitions = Math.max(0, activeRecognitions - 1);
+                if (releaseRequested) releaseNativeIfIdle();
             }
         }
     }
@@ -165,34 +184,58 @@ public class PaddleOcrEngine {
         return src.copy(Bitmap.Config.ARGB_8888, false);
     }
 
-    private Bitmap scaleBitmap(Bitmap src, float scale) {
-        Matrix matrix = new Matrix();
-        matrix.postScale(scale, scale);
-        return Bitmap.createBitmap(src, 0, 0, src.getWidth(), src.getHeight(), matrix, true);
+    /**
+     * DB 检测网络的输入长边。旧版固定为 960，会把 1280x1800 左右的页面再次
+     * 缩小到约 680x960，坐标只能落在较粗的像素网格上。现在尽量保留渲染页
+     * 的原始分辨率，并将长边限制在 2048，兼顾精度、内存和移动端速度。
+     */
+    private int chooseDetectionMaxSide(Bitmap bitmap) {
+        int longestSide = Math.max(bitmap.getWidth(), bitmap.getHeight());
+        int target = Math.max(960, Math.min(2048, longestSide));
+        int aligned = ((target + 31) / 32) * 32;
+        return Math.min(2048, Math.max(32, aligned));
     }
 
     private List<OcrTextBlock> parseFloatArrayToBlocks(float[] floatArr) {
         List<OcrTextBlock> blocks = new ArrayList<>();
+        if (floatArr == null || floatArr.length == 0) {
+            return blocks;
+        }
 
+        final float resultMagic = -32001f;
+        int protocolVersion = 1;
         int i = 0;
+        if (floatArr.length >= 2 && Math.abs(floatArr[0] - resultMagic) < 0.01f) {
+            protocolVersion = Math.max(1, (int) floatArr[1]);
+            i = 2;
+        }
+
         while (i < floatArr.length) {
-            if (i + 3 > floatArr.length) break;
+            int headerSize = protocolVersion >= 2 ? 4 : 3;
+            if (i + headerSize > floatArr.length) break;
 
             int pointNum = (int) floatArr[i++];
             int wordNum = (int) floatArr[i++];
             float score = floatArr[i++];
+            int charBoxNum = protocolVersion >= 2 ? (int) floatArr[i++] : 0;
 
-            if (pointNum <= 0 || wordNum < 0) break;
+            if (pointNum <= 0 || wordNum < 0 || charBoxNum < 0) break;
             if (i + pointNum * 2 > floatArr.length) break;
 
             float minX = Float.MAX_VALUE;
             float minY = Float.MAX_VALUE;
             float maxX = -Float.MAX_VALUE;
             float maxY = -Float.MAX_VALUE;
+            float[] quad = pointNum == 4 ? new float[8] : null;
 
             for (int p = 0; p < pointNum; p++) {
                 float x = floatArr[i++];
                 float y = floatArr[i++];
+
+                if (quad != null) {
+                    quad[p * 2] = x;
+                    quad[p * 2 + 1] = y;
+                }
 
                 minX = Math.min(minX, x);
                 minY = Math.min(minY, y);
@@ -203,16 +246,35 @@ public class PaddleOcrEngine {
             if (i + wordNum > floatArr.length) break;
 
             StringBuilder text = new StringBuilder();
+            int[] tokenStarts = new int[wordNum];
+            int[] tokenEnds = new int[wordNum];
             for (int w = 0; w < wordNum; w++) {
                 int index = (int) floatArr[i++];
+                tokenStarts[w] = text.length();
                 if (index >= 0 && index < wordDict.size()) {
-                    text.append(wordDict.get(index));
+                    String token = wordDict.get(index);
+                    if (token != null) {
+                        text.append(token);
+                    }
                 }
+                tokenEnds[w] = text.length();
             }
 
-            /*
-             * cls_label + cls_score
-             */
+            float[] tokenBoxes = null;
+            if (protocolVersion >= 2) {
+                int boxFloatCount = charBoxNum * 4;
+                if (i + boxFloatCount > floatArr.length) break;
+
+                if (charBoxNum == wordNum && charBoxNum > 0) {
+                    tokenBoxes = new float[boxFloatCount];
+                    for (int b = 0; b < boxFloatCount; b++) {
+                        tokenBoxes[b] = clamp01(floatArr[i + b]);
+                    }
+                }
+                i += boxFloatCount;
+            }
+
+            // cls_label + cls_score
             if (i + 2 <= floatArr.length) {
                 i += 2;
             } else {
@@ -229,12 +291,20 @@ public class PaddleOcrEngine {
                 blocks.add(new OcrTextBlock(
                         blockText,
                         new RectF(minX, minY, maxX, maxY),
-                        score
+                        score,
+                        quad,
+                        tokenBoxes,
+                        tokenBoxes != null ? tokenStarts : null,
+                        tokenBoxes != null ? tokenEnds : null
                 ));
             }
         }
 
         return blocks;
+    }
+
+    private float clamp01(float value) {
+        return Math.max(0f, Math.min(1f, value));
     }
 
     private void loadDictionary(String path) {

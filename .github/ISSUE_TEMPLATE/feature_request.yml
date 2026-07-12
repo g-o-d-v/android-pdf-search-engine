@@ -1,0 +1,29 @@
+name: 功能建议
+description: 建议搜索、OCR、缓存、索引或集成能力。
+title: "[Feature] "
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: 使用场景和问题
+      description: 说明当前为什么难以完成，而不是只写期望的 API 名称。
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: 建议方案
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: 已考虑的替代方案
+  - type: checkboxes
+    id: scope
+    attributes:
+      label: 范围确认
+      options:
+        - label: 该建议属于搜索库职责，而不是特定阅读器 UI。
+          required: true

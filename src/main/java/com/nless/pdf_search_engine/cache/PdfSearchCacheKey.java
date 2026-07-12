@@ -5,12 +5,34 @@ import android.net.Uri;
 public class PdfSearchCacheKey {
 
     public static String buildOcrPageKey(
+            String documentFingerprint,
+            int pageIndex,
+            int renderWidth,
+            String cacheNamespace
+    ) {
+        String fingerprint = documentFingerprint != null ? documentFingerprint : "";
+        String namespace = cacheNamespace != null ? cacheNamespace : "default";
+        return fingerprint
+                + "#page=" + pageIndex
+                + "#ocrWidth=" + renderWidth
+                + "#namespace=" + namespace;
+    }
+
+    /**
+     * 兼容旧调用。新代码应优先传入包含文件大小/修改时间的 documentFingerprint。
+     */
+    public static String buildOcrPageKey(
             Uri pdfUri,
             int pageIndex,
             int renderWidth
     ) {
         String fileKey = pdfUri != null ? pdfUri.toString() : "";
-        return fileKey + "#page=" + pageIndex + "#ocrWidth=" + renderWidth;
+        return buildOcrPageKey(
+                fileKey,
+                pageIndex,
+                renderWidth,
+                "ppocr-mobile-geometry-v3.1-phase2-v1"
+        );
     }
 
     public static String buildTextSearchKey(

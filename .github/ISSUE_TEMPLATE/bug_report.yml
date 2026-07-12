@@ -1,0 +1,52 @@
+name: Bug 报告
+description: 报告可复现的搜索、OCR、缓存或 native 问题。
+title: "[Bug] "
+labels: [bug]
+body:
+  - type: input
+    id: version
+    attributes:
+      label: 依赖版本
+      placeholder: 0.1.0-alpha01
+    validations:
+      required: true
+  - type: input
+    id: device
+    attributes:
+      label: 设备、Android 版本和 ABI
+    validations:
+      required: true
+  - type: dropdown
+    id: mode
+    attributes:
+      label: 搜索模式
+      options:
+        - TEXT_ONLY
+        - OCR_ONLY
+        - TEXT_THEN_OCR
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: 预期行为
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: 复现步骤
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: 日志 / stack trace
+      description: 发布前请删除个人、商业或文档敏感信息。
+  - type: checkboxes
+    id: consent
+    attributes:
+      label: 数据安全
+      options:
+        - label: 我确认附件和日志不包含个人或机密信息。
+          required: true
