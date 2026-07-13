@@ -6,6 +6,31 @@
 
 暂无。
 
+## [0.1.0-alpha03] - 2026-07-13
+
+### Added
+
+- 新增 OCR `O/o/0` 易混淆字符容错，默认开启且可通过 `tolerateOcrOZeroConfusion` 关闭；
+- 无空格查询可跨 OCR 行或 PDF 文本换行匹配，同时保留同一行中的普通单词空格语义；
+- OCR 页面索引根据 token 与文本块几何间距恢复模型遗漏的普通空格，降低渲染分辨率变化导致的空格匹配波动；
+- 补充多 native AAR 同时提供 `libc++_shared.so` 时的应用模块打包说明。
+
+### Changed
+
+- README、集成说明、native 兼容性说明和版本坐标更新为 `0.1.0-alpha03`；
+- `sample` 使用现代 `packaging.jniLibs.pickFirsts` 配置演示 PDFium 与 OCR runtime 共存。
+
+### Notes
+
+- `libc++_shared.so` 的最终选择发生在宿主 APK/AAB 打包阶段，Library AAR 无法安全地把 `pickFirsts` 自动传递给应用模块；
+- 不应排除全部 `libc++_shared.so`，发布前应在真机上同时验证 OCR 与 PDF 渲染。
+
+## [0.1.0-alpha02] - 2026-07-13
+
+### Fixed
+
+- 移除 Library AAR 中不应发布的多余启动图标资源。
+
 ## [0.1.0-alpha01] - 2026-07-12
 
 首个公开 Alpha 版本。

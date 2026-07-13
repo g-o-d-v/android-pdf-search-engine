@@ -48,7 +48,11 @@ public final class PdfPageIndexSearcher {
         PdfSearchQueryOptions request = options != null
                 ? new PdfSearchQueryOptions(options)
                 : new PdfSearchQueryOptions();
-        String normalizedKeyword = PdfTextNormalizer.normalizeQuery(keyword, request);
+        String normalizedKeyword = PdfTextNormalizer.normalizeQuery(
+                keyword,
+                request,
+                page.source
+        );
         if (normalizedKeyword.isEmpty()) return results;
 
         PdfNormalizedText normalizedPage = PdfTextNormalizer.normalizePage(page, request);

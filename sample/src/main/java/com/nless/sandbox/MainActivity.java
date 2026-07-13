@@ -167,6 +167,11 @@ public class MainActivity extends AppCompatActivity {
         options.usePersistentOcrCache = true;
         options.emitIncrementalResults = true;
 
+        // Alpha03 查询规则：OCR O/o/0 容错；跨行时只移除换行，保留普通空格。
+        options.queryOptions.tolerateOcrOZeroConfusion = true;
+        options.queryOptions.allowCrossLineMatch = true;
+        options.queryOptions.ignoreWhitespaceForMatching = false;
+
         // 单 OCR Predictor 流水线：只预取 1 页，限制 Bitmap 峰值内存。
         options.enableOcrPipeline = true;
         options.ocrPrefetchPages = 1;

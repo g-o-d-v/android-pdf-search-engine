@@ -19,6 +19,7 @@ public class PdfSearchOptionsTest {
         source.targetPages = Arrays.asList(1, 3, 5);
         source.queryOptions.caseSensitive = true;
         source.queryOptions.contextCharacters = 40;
+        source.queryOptions.tolerateOcrOZeroConfusion = false;
 
         PdfSearchOptions copy = new PdfSearchOptions(source);
 
@@ -28,5 +29,6 @@ public class PdfSearchOptionsTest {
         assertNotSame(source.queryOptions, copy.queryOptions);
         assertTrue(copy.queryOptions.caseSensitive);
         assertEquals(40, copy.queryOptions.contextCharacters);
+        assertEquals(false, copy.queryOptions.tolerateOcrOZeroConfusion);
     }
 }

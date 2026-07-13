@@ -84,8 +84,8 @@ group = onJitPack
         ? (System.getenv('GROUP') ?: 'com.github.g-o-d-v')
         : propertyOrEnv('GROUP', 'PUBLISH_GROUP', 'com.github.g-o-d-v')
 version = onJitPack
-        ? (System.getenv('VERSION') ?: '0.1.0-alpha01')
-        : propertyOrEnv('VERSION_NAME', 'PUBLISH_VERSION', '0.1.0-alpha01')
+        ? (System.getenv('VERSION') ?: '0.1.0-alpha03')
+        : propertyOrEnv('VERSION_NAME', 'PUBLISH_VERSION', '0.1.0-alpha03')
 
 def artifactIdValue = onJitPack
         ? (System.getenv('ARTIFACT') ?: 'android-pdf-search-engine')

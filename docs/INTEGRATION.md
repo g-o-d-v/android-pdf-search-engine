@@ -24,7 +24,7 @@ dependencyResolutionManagement {
 
 ```groovy
 dependencies {
-    implementation "com.github.g-o-d-v:android-pdf-search-engine:0.1.0-alpha01"
+    implementation "com.github.g-o-d-v:android-pdf-search-engine:0.1.0-alpha03"
 
     // 使用文本层搜索或 AndroidPdfViewer 适配层时添加。
     implementation "com.github.mhiew:android-pdf-viewer:3.2.0-beta.3"
@@ -40,7 +40,7 @@ dependencies {
 本地 Maven 坐标与 JitPack 坐标一致：
 
 ```text
-com.github.g-o-d-v:android-pdf-search-engine:0.1.0-alpha01
+com.github.g-o-d-v:android-pdf-search-engine:0.1.0-alpha03
 ```
 
 ## 3. 发布产物与模型
@@ -74,7 +74,44 @@ libpdfium.so
 
 只使用 OCR 核心 API 时可以不集成 AndroidPdfViewer，但文本层搜索需要应用提供兼容的 PDFium runtime。
 
-## 5. ABI
+## 5. Native 库冲突处理
+
+本库与 `android-pdf-viewer` 可能同时包含 `libc++_shared.so`。该冲突发生在最终 APK/AAB 的应用模块打包阶段，Library AAR 中的 `packaging` 配置不会自动传递给集成应用。
+
+在应用模块的 `build.gradle` 中加入：
+
+```groovy
+android {
+    packaging {
+        jniLibs {
+            pickFirsts += ['**/libc++_shared.so']
+        }
+    }
+}
+```
+
+不要使用 `excludes` 删除全部 `libc++_shared.so`。构建完成后需在真机上同时验证 OCR 与 PDF 渲染。仓库中的 `sample` 模块已经使用该配置。
+
+## 6. 查询规范化
+
+Alpha03 默认启用 OCR `O/o/0` 易混淆字符容错；该规则只作用于 OCR 页面，不改变 PDF 原生文本层的字符语义：
+
+```java
+options.queryOptions.tolerateOcrOZeroConfusion = true;
+```
+
+跨行匹配默认只移除换行及其两侧的版面空白，同一行中的普通单词空格仍参与匹配：
+
+```java
+options.queryOptions.allowCrossLineMatch = true;
+options.queryOptions.ignoreWhitespaceForMatching = false;
+```
+
+例如页面内容 `跨行\n检索测试` 可以由查询 `跨行检索测试` 命中；同一行中的 `PDF search` 不会被无空格查询 `PDFsearch` 命中。需要忽略所有空白时，再显式设置 `ignoreWhitespaceForMatching = true`。
+
+Alpha03 还会根据 OCR token 字符框和同一视觉行中文本块的水平间距恢复模型遗漏的普通空格。例如图像中可见的 `OCR 扫描` 即使被识别模型返回为 `OCR扫描`，页面索引也会在几何间距足够明确时重建空格；普通中文字符间距和统一的标题字距不会被直接视为空格。
+
+## 7. ABI
 
 当前 AAR 支持：
 
@@ -93,7 +130,7 @@ if (!PdfSearchLibraryInfo.isCurrentDeviceAbiSupported()) {
 
 集成应用的 ABI 集合应同时被 OCR runtime 与 PDFium 支持。
 
-## 6. R8 / ProGuard
+## 8. R8 / ProGuard
 
 AAR 已自带混淆规则。使用非标准 shrinker 时至少保留：
 
@@ -102,7 +139,7 @@ com.nless.pdf_search_engine.paddle.PaddleOcrNative
 com.nless.pdf_search_engine.pdfium.PdfiumTextNative
 ```
 
-## 7. 生命周期
+## 9. 生命周期
 
 ```java
 session.close();
@@ -112,7 +149,7 @@ session.releaseOcrResources();
 
 阅读器关闭文档时应关闭 session。进入后台或内存紧张时可释放 OCR predictor。
 
-## 8. 混合页回退策略
+## 10. 混合页回退策略
 
 需要搜索同一页中的文本层和扫描图片时，建议：
 
@@ -125,7 +162,7 @@ options.textLayerOcrFallbackPolicy =
 
 该策略先搜索文本层；文本层没有当前关键词时，再对该页执行 OCR。
 
-## 9. 结果与高亮
+## 11. 结果与高亮
 
 搜索库返回逻辑结果，不管理阅读器 UI：
 
@@ -134,6 +171,6 @@ options.textLayerOcrFallbackPolicy =
 3. 使用 `resultId` 保存当前选中结果；
 4. 阅读器自行实现普通/选中高亮、上一个/下一个、跳页和滚动。
 
-## 10. 16 KiB
+## 12. 16 KiB
 
 项目自带的 ARM64 OCR native 库提供 16 KiB ELF 对齐检查。当前已验证 PDFium runtime 不声明完整支持最终 APK 的 16 KiB page size。详见 [`PDFIUM_16K_COMPATIBILITY.md`](PDFIUM_16K_COMPATIBILITY.md)。

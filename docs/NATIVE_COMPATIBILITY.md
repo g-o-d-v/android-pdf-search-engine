@@ -55,3 +55,21 @@ com.github.mhiew:pdfium-android:1.9.2
 
 完整检查方法仍可参考 [`PDFIUM_16K_COMPATIBILITY.md`](PDFIUM_16K_COMPATIBILITY.md)，
 但其中 PDFium 运行时必须由集成方重新验证。
+
+## 多 AAR 的 `libc++_shared.so` 冲突
+
+当应用同时集成本库和 PDFium/AndroidPdfViewer 等 native AAR 时，多个依赖可能提供同一路径的 `libc++_shared.so`。最终选择发生在应用 APK/AAB 的打包阶段，Library AAR 无法将 `pickFirsts` 自动注入宿主。
+
+应用模块应配置：
+
+```groovy
+android {
+    packaging {
+        jniLibs {
+            pickFirsts += ['**/libc++_shared.so']
+        }
+    }
+}
+```
+
+不能排除全部 `libc++_shared.so`。Android 应用中的所有 native 依赖还应尽量使用兼容的 libc++/NDK 版本，并在真机上同时验证 OCR 和 PDF 渲染。

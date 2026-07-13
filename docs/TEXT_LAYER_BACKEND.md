@@ -88,3 +88,7 @@ adb shell pm clear com.nless.sandbox
 混合搜索  -> 第 3 页 PDF 文本层
 扫描      -> 第 3 页图片区域 OCR 回退
 ```
+
+## 与 OCR runtime 同时集成
+
+`android-pdf-viewer` 与本库可能同时提供 `libc++_shared.so`。由于最终 APK 的 native 合并由应用模块控制，请按 [`INTEGRATION.md`](INTEGRATION.md) 的 Native 冲突章节配置 `packaging.jniLibs.pickFirsts`。该规则不能由 Library AAR 自动传递给宿主。

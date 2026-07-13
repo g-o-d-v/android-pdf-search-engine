@@ -17,7 +17,7 @@ public final class PdfSearchVersions {
     public static final int OCR_MODEL_VERSION = 1;
 
     /** OCR token 几何生成算法。 */
-    public static final int OCR_GEOMETRY_VERSION = 31;
+    public static final int OCR_GEOMETRY_VERSION = 32;
 
     /** 文本规范化规则。 */
     public static final int NORMALIZATION_VERSION = 1;

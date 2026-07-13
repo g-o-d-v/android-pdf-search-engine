@@ -35,7 +35,21 @@ public final class PdfTextToken {
     }
 
     public boolean isLineBreak() {
-        return "\n".equals(text) || "\r".equals(text) || "\r\n".equals(text);
+        if (text.isEmpty()) return false;
+        for (int offset = 0; offset < text.length();) {
+            int codePoint = text.codePointAt(offset);
+            if (!isLineBreakCodePoint(codePoint)) return false;
+            offset += Character.charCount(codePoint);
+        }
+        return true;
+    }
+
+    private static boolean isLineBreakCodePoint(int codePoint) {
+        return codePoint == '\n'
+                || codePoint == '\r'
+                || codePoint == 0x0085
+                || codePoint == 0x2028
+                || codePoint == 0x2029;
     }
 
     public boolean isWhitespace() {

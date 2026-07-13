@@ -6,7 +6,7 @@
 
 面向 Android 的 PDF 搜索库，统一提供 PDF 文本层搜索、Paddle Lite OCR、页面级持久化索引和逻辑搜索结果。
 
-当前版本：**`0.1.0-alpha01`**。项目采用 **Apache License 2.0**，允许个人或组织使用、修改、分发和商业使用；再分发时需保留许可证与必要通知。
+当前版本：**`0.1.0-alpha03`**。项目采用 **Apache License 2.0**，允许个人或组织使用、修改、分发和商业使用；再分发时需保留许可证与必要通知。
 
 ## 主要能力
 
@@ -15,7 +15,8 @@
 - 文本层优先、按页回退 OCR，支持文本页、扫描页和混合页；
 - 单 OCR Predictor 流水线：页面预渲染、单路推理和异步缓存；
 - 页面级持久化索引，更换关键词时复用文本与坐标；
-- Unicode NFKC、大小写、空白、跨行和英文断行规范化；
+- Unicode NFKC、大小写、OCR 几何空格重建、无空格跨换行和英文断行规范化；
+- OCR `O/o/0` 易混淆字符容错，可按查询关闭；
 - 稳定 `resultId`、跨行多矩形、结果上下文和跨来源去重；
 - 增量结果、进度、页面性能统计、完整性摘要、失败页继续；
 - 暂停、恢复、取消以及 OCR/native 资源释放；
@@ -52,7 +53,7 @@ android-pdf-search-engine/
 - 它通过 `implementation project(':')` 引用根目录 Library；
 - 它不会进入 Release AAR；
 - 它不会作为 JitPack 依赖发布；
-- 其中的 Activity、布局、图标和测试 PDF 不会进入消费应用。
+- 其中的 Activity、布局、图标和测试 PDF 不会进入集成应用。
 
 JitPack 正式发布对象只有根目录 Android Library。
 
@@ -85,7 +86,7 @@ dependencyResolutionManagement {
 
 ```groovy
 dependencies {
-    implementation "com.github.g-o-d-v:android-pdf-search-engine:0.1.0-alpha01"
+    implementation "com.github.g-o-d-v:android-pdf-search-engine:0.1.0-alpha03"
 }
 ```
 
@@ -109,7 +110,7 @@ options.mode = PdfSearchMode.OCR_ONLY;
 
 ```groovy
 dependencies {
-    implementation "com.github.g-o-d-v:android-pdf-search-engine:0.1.0-alpha01"
+    implementation "com.github.g-o-d-v:android-pdf-search-engine:0.1.0-alpha03"
 
     implementation "com.github.mhiew:android-pdf-viewer:3.2.0-beta.3"
 }
@@ -133,6 +134,26 @@ implementation "com.github.mhiew:android-pdf-viewer:3.2.0-beta.3"
 
 > 当前文本层搜索链路基于上述 PDF Viewer/PDFium 运行时完成验证。使用其他 PDF Viewer 或 PDFium 版本时，需要自行确认 native 库和 PDFium 文本 API 的兼容性。
 
+### Native 库冲突处理
+
+本库与 `android-pdf-viewer` 都可能向最终 APK 提供 `libc++_shared.so`。最终 native 文件由**应用模块**统一打包，Android Library AAR 无法把自己的 `packaging` 规则自动传递给集成应用，因此当前不能在本库内部安全地替宿主完成该选择。
+
+请在应用模块的 `build.gradle` 中加入：
+
+```groovy
+android {
+    packaging {
+        jniLibs {
+            pickFirsts += ['**/libc++_shared.so']
+        }
+    }
+}
+```
+
+不要把所有 `libc++_shared.so` 排除。OCR、OpenCV、Paddle Lite 或 PDFium 可能在运行时依赖该共享 C++ 运行库。构建完成后，请在真机上同时验证 OCR 搜索与 PDF 渲染。
+
+仓库中的 `sample` 已采用同一配置，可作为集成参考。
+
 JitPack 坐标规则：
 
 ```text
@@ -154,7 +175,7 @@ assets/rec.nb
 assets/MODEL_SHA256.txt
 ```
 
-消费项目引用 JitPack 版本时只下载已经构建好的 AAR，**不会执行本仓库的模型下载任务，也不需要访问 PaddlePaddle 模型服务器**。模型和 native 库会增加最终应用包体积，这是离线 OCR 的必要组成部分。
+集成项目引用 JitPack 版本时只下载已经构建好的 AAR，**不会执行本仓库的模型下载任务，也不需要访问 PaddlePaddle 模型服务器**。模型和 native 库会增加最终应用包体积，这是离线 OCR 的必要组成部分。
 
 详情见 [`MODEL_PROVENANCE.md`](MODEL_PROVENANCE.md) 和 [`docs/OFFICIAL_OCR_MODELS.md`](docs/OFFICIAL_OCR_MODELS.md)。
 
@@ -209,6 +230,14 @@ options.enableDocumentIndex = true;
 options.usePersistentPageIndexCache = true;
 options.enableOcrPipeline = true;
 options.ocrPrefetchPages = 1;
+
+// Alpha03：OCR O/o/0 容错，以及只忽略换行、保留普通空格。
+options.queryOptions.tolerateOcrOZeroConfusion = true;
+options.queryOptions.allowCrossLineMatch = true;
+options.queryOptions.ignoreWhitespaceForMatching = false;
+
+// OCR 页面索引会根据字符框和同一视觉行的块间距恢复遗漏的普通空格。
+// 因此可见内容 “OCR 扫描” 应由带空格查询命中；无空格连接只用于真正换行。
 
 try (PdfSearchSession session =
              new PdfSearchSession(context, pdfUri, options)) {
@@ -285,7 +314,7 @@ python tools\verify_native_libs.py `
   src\main\jniLibs
 ```
 
-当前只确认项目自带 ARM64 OCR/C++ 库的 ELF 对齐。为保证文本层搜索正确，本版本使用已验证的 mhiew/PdfiumAndroid runtime，因此**不声明最终消费 APK 已完整通过 Android 15 的 16 KiB page-size 要求**。
+当前只确认项目自带 ARM64 OCR/C++ 库的 ELF 对齐。为保证文本层搜索正确，本版本使用已验证的 mhiew/PdfiumAndroid runtime，因此**不声明最终集成 APK 已完整通过 Android 15 的 16 KiB page-size 要求**。
 
 详情见 [`docs/NATIVE_COMPATIBILITY.md`](docs/NATIVE_COMPATIBILITY.md) 和 [`docs/PDFIUM_16K_COMPATIBILITY.md`](docs/PDFIUM_16K_COMPATIBILITY.md)。
 

@@ -15,6 +15,7 @@ import com.nless.pdf_search_engine.core.OcrDebugRect;
 import com.nless.pdf_search_engine.core.PdfSearchCacheSource;
 import com.nless.pdf_search_engine.core.PdfSearchCancelChecker;
 import com.nless.pdf_search_engine.core.PdfSearchOptions;
+import com.nless.pdf_search_engine.core.PdfSearchQueryOptions;
 import com.nless.pdf_search_engine.core.PdfSearchPageMetrics;
 import com.nless.pdf_search_engine.core.PdfSearchPageOrder;
 import com.nless.pdf_search_engine.core.PdfSearchPageError;
@@ -25,6 +26,9 @@ import com.nless.pdf_search_engine.core.PdfSearchProgressListener;
 import com.nless.pdf_search_engine.core.PdfSearchRect;
 import com.nless.pdf_search_engine.core.PdfSearchResult;
 import com.nless.pdf_search_engine.core.PdfSearchSource;
+import com.nless.pdf_search_engine.index.PdfPageIndex;
+import com.nless.pdf_search_engine.index.PdfPageIndexFactory;
+import com.nless.pdf_search_engine.index.PdfPageIndexSearcher;
 import com.nless.pdf_search_engine.paddle.PaddleOcrEngine;
 
 import java.util.ArrayList;
@@ -776,12 +780,26 @@ public class OcrSearchEngine {
                     buildDebugGeometry(pageIndex, pageResult)
             );
         }
-        pageResults.addAll(buildSearchResultsFromOcrPage(
+        PdfPageIndex pageIndexData = PdfPageIndexFactory.fromOcr(
                 pageIndex,
-                keyword,
                 pageResult,
-                request.ignoreCase,
-                documentFingerprint
+                request.detectMultiColumnLayout,
+                request.multiColumnMinGapRatio
+        );
+        if (pageIndexData == null || keyword == null || keyword.trim().isEmpty()) {
+            return pageResults;
+        }
+
+        PdfSearchQueryOptions queryOptions = request.queryOptions != null
+                ? new PdfSearchQueryOptions(request.queryOptions)
+                : new PdfSearchQueryOptions();
+        if (!request.ignoreCase) queryOptions.caseSensitive = true;
+
+        pageResults.addAll(PdfPageIndexSearcher.searchPage(
+                documentFingerprint,
+                pageIndexData,
+                keyword,
+                queryOptions
         ));
         pageResults.sort(PdfSearchResultComparator.INSTANCE);
         return pageResults;

@@ -7,7 +7,7 @@ body:
     id: version
     attributes:
       label: 依赖版本
-      placeholder: 0.1.0-alpha01
+      placeholder: 0.1.0-alpha03
     validations:
       required: true
   - type: input

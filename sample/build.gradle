@@ -16,10 +16,10 @@ android {
         testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
     }
 
-    packagingOptions {
+    packaging {
         jniLibs {
-            useLegacyPackaging false
-            pickFirsts += ['lib/**/libc++_shared.so']
+            useLegacyPackaging = false
+            pickFirsts += ['**/libc++_shared.so']
         }
     }
 

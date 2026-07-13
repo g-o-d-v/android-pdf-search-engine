@@ -125,25 +125,59 @@ public final class PdfPageIndexFactory {
         int validBoxes = 0;
         float scoreSum = 0f;
         int scoreCount = 0;
+        OcrTextBlock previousBlock = null;
 
         for (OcrTextBlock block : blocks) {
             if (block == null || block.text == null || block.text.isEmpty()
                     || block.rectInBitmap == null) {
                 continue;
             }
-            if (text.length() > 0) {
-                int start = text.length();
-                text.append('\n');
-                tokens.add(new PdfTextToken("\n", start, text.length(), null, lineIndex, block.score));
-                lineIndex++;
+
+            if (previousBlock != null && text.length() > 0) {
+                int separator = OcrLayoutWhitespaceReconstructor.separatorBetweenBlocks(
+                        previousBlock.text,
+                        previousBlock.rectInBitmap.left,
+                        previousBlock.rectInBitmap.top,
+                        previousBlock.rectInBitmap.right,
+                        previousBlock.rectInBitmap.bottom,
+                        estimateGlyphWidthPixels(previousBlock),
+                        block.text,
+                        block.rectInBitmap.left,
+                        block.rectInBitmap.top,
+                        block.rectInBitmap.right,
+                        block.rectInBitmap.bottom,
+                        estimateGlyphWidthPixels(block),
+                        page.bitmapWidth
+                );
+                if (separator == OcrLayoutWhitespaceReconstructor.SEPARATOR_LINE_BREAK) {
+                    appendSeparator(text, tokens, "\n", lineIndex, block.score);
+                    lineIndex++;
+                } else if (separator == OcrLayoutWhitespaceReconstructor.SEPARATOR_SPACE
+                        && !endsWithWhitespace(text)) {
+                    appendSeparator(text, tokens, " ", lineIndex, block.score);
+                }
             }
 
             if (block.hasTokenBoxes()) {
+                OcrLayoutWhitespaceReconstructor.TokenSpacingProfile spacing =
+                        OcrLayoutWhitespaceReconstructor.analyzeTokens(
+                                block.text,
+                                block.tokenBoxesInLine,
+                                block.tokenUtf16Starts,
+                                block.tokenUtf16Ends
+                        );
                 for (int tokenIndex = 0; tokenIndex < block.getTokenCount(); tokenIndex++) {
                     int tokenStart = clamp(block.tokenUtf16Starts[tokenIndex], 0, block.text.length());
                     int tokenEnd = clamp(block.tokenUtf16Ends[tokenIndex], tokenStart, block.text.length());
                     if (tokenEnd <= tokenStart) continue;
                     String tokenText = block.text.substring(tokenStart, tokenEnd);
+
+                    if (spacing.shouldInsertSpaceBefore(tokenIndex)
+                            && !endsWithWhitespace(text)
+                            && !startsWithWhitespace(tokenText)) {
+                        appendSeparator(text, tokens, " ", lineIndex, block.score);
+                    }
+
                     int originalStart = text.length();
                     text.append(tokenText);
                     int originalEnd = text.length();
@@ -167,6 +201,7 @@ public final class PdfPageIndexFactory {
             }
             scoreSum += block.score;
             scoreCount++;
+            previousBlock = block;
         }
 
         return new PdfPageIndex(
@@ -281,6 +316,49 @@ public final class PdfPageIndexFactory {
         });
         output.addAll(band);
         band.clear();
+    }
+
+
+    private static float estimateGlyphWidthPixels(OcrTextBlock block) {
+        if (block == null || block.rectInBitmap == null) return 0f;
+        return OcrLayoutWhitespaceReconstructor.estimateGlyphWidthPixels(
+                block.text,
+                block.tokenBoxesInLine,
+                block.tokenUtf16Starts,
+                block.tokenUtf16Ends,
+                block.rectInBitmap.width()
+        );
+    }
+
+    private static void appendSeparator(
+            StringBuilder text,
+            List<PdfTextToken> tokens,
+            String separator,
+            int lineIndex,
+            float confidence
+    ) {
+        int start = text.length();
+        text.append(separator);
+        tokens.add(new PdfTextToken(
+                separator,
+                start,
+                text.length(),
+                null,
+                lineIndex,
+                confidence
+        ));
+    }
+
+    private static boolean startsWithWhitespace(String value) {
+        return value != null
+                && !value.isEmpty()
+                && Character.isWhitespace(value.codePointAt(0));
+    }
+
+    private static boolean endsWithWhitespace(CharSequence value) {
+        if (value == null || value.length() == 0) return false;
+        char last = value.charAt(value.length() - 1);
+        return Character.isWhitespace(last);
     }
 
     private static void appendFallbackTokens(

@@ -1,6 +1,6 @@
 # PDFium / AndroidPdfViewer 与 16 KiB 兼容检查清单
 
-> **当前发布状态**：`0.1.0-alpha01` 使用已验证的
+> **当前发布状态**：`0.1.0-alpha03` 使用已验证的
 > `com.github.mhiew:android-pdf-viewer:3.2.0-beta.3` 与
 > `com.github.mhiew:pdfium-android:1.9.2`。本项目不声明该 PDFium runtime
 > 已通过 Android 15 的 16 KiB page-size 要求。
